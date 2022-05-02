@@ -1,0 +1,160 @@
+default:
+  image: Localrepo_URL/docker/maven:3.8.2-amazoncorretto-11
+
+cache:
+  paths:
+    - .m2
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+stages:
+  - mvn_build
+  - mvn_test
+  - mvn_deploy
+  - docker_image
+  - k8s_deploy
+  - external_servers_deploy
+
+.ssh_key:
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$Runner1_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -p $external_server1_PORT $external_server1_IP >> ~/.ssh/known_hosts
+    - ssh-keyscan -p $external_server2_PORT $external_server2_IP >> ~/.ssh/known_hosts
+    - ssh-keyscan -p $external_server3_PORT $external_server3_IP >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+
+.m2_create:
+  before_script:
+    - |
+      if [[ ! -d ~/.m2 ]]; then
+        mkdir ~/.m2
+      fi
+    - cp .settings.xml ~/.m2/settings.xml
+    - sed -i ~/.m2/settings.xml -e "s/ART_USER/${ART_USER}/"
+    - sed -i ~/.m2/settings.xml -e "s/ART_PASS/${ART_PASS}/"
+
+.docker_build:
+  before_script:
+    - export POM_VERSION=`grep -A 10 "<parent>" $MICROSERVICE/pom.xml | grep "<version>" | head -1 | awk -F '>' '{print $2}' | awk -F '<' '{print $1}'`
+    - echo $POM_VERSION
+    - docker login -u $DOCKER_LOGIN -p $DOCKER_PASS $DOCKER_BASE
+    - cd /opt/
+    - wget https://$Localrepo_User:$Localrepo_Pass@Localrepo_URL/artifactory/libs-snapshot/com/$CI_PROJECT_NAME/$MICROSERVICE/$POM_VERSION/$MICROSERVICE-$POM_VERSION.jar -O $MICROSERVICE-$POM_VERSION.jar
+    - |
+        {
+          echo FROM Localrepo_URL/docker/amazoncorretto:11
+          echo COPY ./$MICROSERVICE-$POM_VERSION.jar /opt/
+          echo WORKDIR /opt/
+          echo CMD [\"java\", \"-jar\", \"${MICROSERVICE}-${POM_VERSION}.jar\"]
+        } > Dockerfile
+    - docker build . -t Localrepo_URL/docker/$CI_PROJECT_NAME/$MICROSERVICE:$POM_VERSION
+    - docker push Localrepo_URL/docker/$CI_PROJECT_NAME/$MICROSERVICE:$POM_VERSION
+
+.k8s_init:
+  before_script:
+    - export HOME=$CI_PROJECT_DIR
+    - kubectl config set-cluster devenv --server="${K8S_SERVER}"
+    - kubectl config set clusters.k8s.certificate-authority-data ${K8S_CERTIFICATE_AUTHORITY_DATA}
+    - kubectl config set-credentials gitlab --token="${K8S_USER_TOKEN}"
+    - kubectl config set-context default --cluster=devenv --user=gitlab
+    - kubectl config use-context default
+
+mvn_build:
+  extends: .m2_create
+  stage: mvn_build
+  needs: []
+  script:
+    - mvn clean install -DskipTests
+  artifacts:
+    paths:
+      - '*/target'
+  only:
+    - tags
+
+mvn_test:
+  extends: .m2_create
+  needs: [mvn_build]
+  stage: mvn_test
+  script:
+    - mvn test
+  only:
+    - tags
+
+mvn_deploy:
+  extends: .m2_create
+  stage: mvn_deploy
+  needs: [mvn_test]
+  script:
+    - mvn deploy
+  only:
+    - tags
+
+build_external_servers_docker_image:
+  variables:
+    MICROSERVICE: external_servers
+  extends: .docker_build
+  stage: docker_image
+  needs: [mvn_deploy]
+  image: Localrepo_URL/docker/docker:latest
+  script:
+    - echo $MICROSERVICE
+  only:
+   - tags
+
+build_service1_docker_image:
+  variables:
+    MICROSERVICE: service1
+  extends: .docker_build
+  stage: docker_image
+  needs: [mvn_deploy]
+  image: Localrepo_URL/docker/docker:latest
+  script:
+    - echo $MICROSERVICE
+  only:
+   - tags
+
+build_service2_docker_image:
+  variables:
+    MICROSERVICE: service2
+  extends: .docker_build
+  stage: docker_image
+  needs: [mvn_deploy]
+  image: Localrepo_URL/docker/docker:latest
+  script:
+    - echo $MICROSERVICE
+  only:
+    - tags
+
+k8s_deploy:
+  image:
+    name: Localrepo_URL/docker/bitnami/kubectl:latest
+    entrypoint: [""]
+  stage: k8s_deploy
+  needs: [build_service1_docker_image, build_service2_docker_image, build_external_servers_docker_image]
+  extends: .k8s_init
+  script:
+    - kubectl --insecure-skip-tls-verify replace --force -f deployment.yaml
+    - grep "host:" deployment.yaml | awk '{print $3}'
+  environment:
+    name: ns-name
+  only:
+    - tags
+
+external_servers_deploy:
+  image:
+    name: Localrepo_URL/docker/kroniak/ssh-client:latest
+  stage: external_servers_deploy
+  needs: [build_external_servers_docker_image]
+  extends: .ssh_key
+  script:
+    - ssh $external_servers_USR@$external_server1_IP -p $external_server1_PORT "docker-compose pull && docker-compose up --force-recreate --build -d && docker image prune -f"
+    - ssh $external_servers_USR@$external_server2_IP -p $external_server2_PORT "docker-compose pull && docker-compose up --force-recreate --build -d && docker image prune -f"
+    - ssh $external_servers_USR@$external_server3_IP -p $external_server3_PORT "docker-compose pull && docker-compose up --force-recreate --build -d && docker image prune -f"
+  environment:
+    name: ns-name
+  only:
+    - tags

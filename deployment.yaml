@@ -1,0 +1,618 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: service2-mysql-secret
+  namespace: ns_name
+type: Opaque
+data:
+  mysql-root-password: hashed-pass
+  mysql-username: hashed-user
+  mysql-password: hashed-pass
+  mysql-db-name: hashed-db-name
+  service2-database-user: hashed-user
+  service2-database-pass: hashed-pass
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: service1-mysql-secret
+  namespace: ns_name
+type: Opaque
+data:
+  mysql-root-password: hashed-pass
+  mysql-username: hashed-user
+  mysql-password: hashed-pass
+  mysql-db-name: hashed-db-name
+  service1-database-user: hashed-user
+  service1-database-pass: hashed-pass
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service2-cm
+  namespace: ns_name
+data:
+  service2-ipg-address: "https://ipg.example.com"
+  service2-database-host: "service2-mysql"
+  service2-database-port: "3306"
+  service2-ipg-gateway: "https://example.com/v2/api"
+  service2-ipg-request-path: "/Transaction/Request"
+  service2-ipg-verify-path: "/Transaction/Verify"
+  service2-ipg-api-key: "c4337847103deba75ab9d011fde59f49"
+  service2_oath-server_server_url: "https://oath-server.example.com/auth"
+  service2-oath-server-realm: "ns_name"
+  service2-oath-server-client-id: "ns_name-backend"
+  service2-oath-server-client-secret: "772bc-9761-44fe-a7ab-f3d8d"
+  service2_admin_oath-server_client_id: "Admin-cli"
+  service2_admin_oath-server_client_secret: "e9c-8b62-4653-bc71-eeab95"
+  service2-message-base-url: "http://example.com:8080"
+  service2-message-api-key: "3jzlIG-aqb0lHnkKg5PQLpjD1QJz"
+  service2-message-pattern-id: "adasda"
+  service2-message-sender: "45210"
+  service2-message-parameter: "verification-code"
+  service2_external_servers_address: "http://external_servers:9090"
+  service2_external_servers_connection_enable: "true"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service1-cm
+  namespace: ns_name
+data:
+  service1-database-host: "service1-mysql"
+  service1-database-port: "3306"
+  service1-tickers-topic: "/service1/tickers"
+  service1_ws_broker_broker_host: "ws_broker"
+  service1_ws_broker_broker_port: "1883"
+  service1_ws_broker_client_id: "service1_ws_broker"
+  service1_ws_broker_client_username: "service1_ws_broker_username"
+  service1_ws_broker_client_password: "service1_ws_broker_password"
+  service1_ws_broker_message_qos: "0"
+  service1_oath-server_server_url: "https://oath-server.example.com/auth"
+  service1_oath-server_realm: "ns_name"
+  service1_oath-server_client_id: "ns_name-backend"
+  service1_oath-server_client_secret: "d65772b-44fe-a7ab-f3d8d33d7df5"
+  service1_usdt_topic: "/service1/usdt/price"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service1-mysql-cm
+  namespace: ns_name
+  labels:
+    app: service1
+    app: mysql
+data:
+  my.cnf: |-
+    [client]
+    port   = 3306
+    socket   = /var/run/mysqld/mysqld.sock
+    default-character-set=utf8
+    [mysql]
+    default-character-set=utf8
+    [mysqld_safe]
+    pid-file = /var/run/mysqld/mysqld.pid
+    socket   = /var/run/mysqld/mysqld.sock
+    nice   = 0
+    [mysqld]
+    user   = mysql
+    pid-file = /var/run/mysqld/mysqld.pid
+    socket   = /var/run/mysqld/mysqld.sock
+    port   = 3306
+    basedir    = /usr
+    datadir    = /var/lib/mysql
+    tmpdir   = /tmp
+    lc-messages-dir  = /usr/share/mysql
+    explicit_defaults_for_timestamp
+    collation-server = utf8_unicode_ci
+    init-connect='SET NAMES utf8'
+    character-set-server = utf8
+    log-error  = /var/log/mysql/error.log
+    sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES
+    symbolic-links=0
+    max_connections=4096
+    !includedir /etc/mysql/conf.d/
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: external_servers
+  namespace: ns_name
+spec:
+  selector:
+    app: external_servers
+  ports:
+  - port: 6000
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service1
+  namespace: ns_name
+spec:
+  selector:
+    app: service1
+  ports:
+  - port: 6001
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service2
+  namespace: ns_name
+spec:
+  selector:
+    app: service2
+  ports:
+  - port: 6003
+    protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service2-mysql
+  namespace: ns_name
+  labels:
+    app: service2
+spec:
+  selector:
+    app: service2
+    tier: mysql
+  ports:
+    - port: 3306
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service1-mysql
+  namespace: ns_name
+  labels:
+    app: service1
+spec:
+  selector:
+    app: service1
+    tier: mysql
+  ports:
+    - port: 3306
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  name: external_servers-dashboard-ingress
+  namespace: ns_name
+spec:
+  rules:
+  - host: external_servers.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: external_servers
+          servicePort: 6000
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  name: service1-dashboard-ingress
+  namespace: ns_name
+spec:
+  rules:
+  - host: service1.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: service1
+          servicePort: 6001
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  name: service2-dashboard-ingress
+  namespace: ns_name
+spec:
+  rules:
+  - host: service2.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: service2
+          servicePort: 6002
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  name: ipg-service2-dashboard-ingress
+  namespace: ns_name
+spec:
+  rules:
+  - host: ipg.example.com
+    http:
+      paths:
+      - backend:
+          serviceName: service2
+          servicePort: 6003
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service1
+  namespace: ns_name
+  labels:
+    app: service1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: service1
+    spec:
+      containers:
+        - name: service1
+          image: Localrepo_URL/docker/$CI_PROJECT_NAME/service1:0.1-SNAPSHOT
+          imagePullPolicy: Always
+          env:
+          - name: service1_DATABASE_USER
+            valueFrom:
+              secretKeyRef:
+                name: service1-mysql-secret
+                key: service1-database-user
+          - name: service1_DATABASE_PASS
+            valueFrom:
+              secretKeyRef:
+                name: service1-mysql-secret
+                key: service1-database-pass
+          - name: service1_DATABASE_NAME
+            valueFrom:
+              secretKeyRef:
+                name: service1-mysql-secret
+                key: mysql-db-name
+          - name: service1_DATABASE_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1-database-host
+          - name: service1_DATABASE_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1-database-port
+          - name: service1_TICKERS_TOPIC
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1-tickers-topic
+          - name: service1_ws_broker_BROKER_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_ws_broker_broker_host
+          - name: service1_ws_broker_BROKER_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_ws_broker_broker_port
+          - name: service1_ws_broker_CLIENT_ID
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_ws_broker_client_id
+          - name: service1_ws_broker_CLIENT_USERNAME
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_ws_broker_client_username
+          - name: service1_ws_broker_CLIENT_PASSWORD
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_ws_broker_client_password
+          - name: service1_ws_broker_MESSAGE_QOS
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_ws_broker_message_qos
+          - name: service1_oath-server_SERVER_URL
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_oath-server_server_url
+          - name: service1_oath-server_REALM
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_oath-server_realm
+          - name: service1_oath-server_CLIENT_ID
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_oath-server_client_id
+          - name: service1_oath-server_CLIENT_SECRET
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_oath-server_client_secret
+          - name: service1_USDT_TOPIC
+            valueFrom:
+              configMapKeyRef:
+                name: service1-cm
+                key: service1_usdt_topic
+          ports:
+            - containerPort: 6000
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service2
+  namespace: ns_name
+  labels:
+    app: service2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service2
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: service2
+    spec:
+      containers:
+        - name: service2
+          image: Localrepo_URL/docker/$CI_PROJECT_NAME/service2:0.1-SNAPSHOT
+          imagePullPolicy: Always
+          env:
+          - name: service2_DATABASE_USER
+            valueFrom:
+              secretKeyRef:
+                name: service2-mysql-secret
+                key: service2-database-user
+          - name: service2_DATABASE_PASS
+            valueFrom:
+              secretKeyRef:
+                name: service2-mysql-secret
+                key: service2-database-pass
+          - name: service2_DATABASE_NAME
+            valueFrom:
+              secretKeyRef:
+                name: service2-mysql-secret
+                key: mysql-db-name
+          - name: service2_IPG_ADDRESS
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-ipg-address
+          - name: service2_DATABASE_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-database-host
+          - name: service2_DATABASE_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-database-port
+          - name: service2_IPG_GATEWAY
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-ipg-gateway
+          - name: service2_IPG_REQUEST_PATH
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-ipg-request-path
+          - name: service2_IPG_VERIFY_PATH
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-ipg-verify-path
+          - name: service2_IPG_API_KEY
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-ipg-api-key
+          - name: service2_oath-server_SERVER_URL
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2_oath-server_server_url
+          - name: service2_oath-server_REALM
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-oath-server-realm
+          - name: service2_oath-server_CLIENT_ID
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-oath-server-client-id
+          - name: service2_oath-server_CLIENT_SECRET
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-oath-server-client-secret
+          - name: service2_ADMIN_oath-server_CLIENT_ID
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2_admin_oath-server_client_id
+          - name: service2_ADMIN_oath-server_CLIENT_SECRET
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2_admin_oath-server_client_secret
+          - name: service2_MESSAGE_BASE_URL
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-message-base-url
+          - name: service2_MESSAGE_API_KEY
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-message-api-key
+          - name: service2_MESSAGE_PATTERN_ID
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-message-pattern-id
+          - name: service2_MESSAGE_SENDER
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-message-sender
+          - name: service2_MESSAGE_PARAMETER
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2-message-parameter
+          - name: service2_external_servers_ADDRESS
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2_external_servers_address
+          - name: service2_external_servers_CONNECTION_ENABLE
+            valueFrom:
+              configMapKeyRef:
+                name: service2-cm
+                key: service2_external_servers_connection_enable
+          ports:
+            - containerPort: 8680
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service2-mysql
+  namespace: ns_name
+  labels:
+    app: service2
+spec:
+  selector:
+    matchLabels:
+      app: service2
+      tier: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: service2
+        tier: mysql
+    spec:
+      containers:
+      - image: Localrepo_URL/docker/mysql:5.6
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: service2-mysql-secret
+              key: mysql-root-password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: service2-mysql-secret
+              key: mysql-username
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: service2-mysql-secret
+              key: mysql-password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: service2-mysql-secret
+              key: mysql-db-name
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: service2-mysql-persistent-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: service2-mysql-persistent-storage
+        persistentVolumeClaim:
+          claimName: service2-mysql-pv-claim
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service1-mysql
+  namespace: ns_name
+  labels:
+    app: service1
+spec:
+  selector:
+    matchLabels:
+      app: service1
+      tier: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: service1
+        tier: mysql
+    spec:
+      containers:
+      - image: Localrepo_URL/docker/mysql:5.6
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: service1-mysql-secret
+              key: mysql-root-password
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: service1-mysql-secret
+              key: mysql-username
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: service1-mysql-secret
+              key: mysql-password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: service1-mysql-secret
+              key: mysql-db-name
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+          - name: mysql-config
+            mountPath: /etc/mysql/my.cnf
+            subPath: my.cnf
+          - name: service1-mysql-persistent-storage
+            mountPath: /var/lib/mysql
+      volumes:
+        - name: mysql-config
+          configMap:
+            name: service1-mysql-cm
+        - name: service1-mysql-persistent-storage
+          persistentVolumeClaim:
+            claimName: service1-mysql-pv-claim
